@@ -66,11 +66,6 @@ func main() {
 			failed[e.Package] = map[string]bool{}
 		}
 		failed[e.Package][e.Test] = true
-
-		if strings.Contains(e.Test, "/") {
-			// It's a subtest, so we don't have to rerun its parent
-			delete(failed[e.Package], parent(e.Test))
-		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -90,6 +85,16 @@ func main() {
 		pkgs = append(pkgs, p)
 	}
 	sort.Strings(pkgs)
+
+	// Remove tests for which a subtest failed, so that we don't rerun the full
+	// test but only the failed subtests.
+	for _, tests := range failed {
+		for t := range tests {
+			if parent(t) != t {
+				delete(tests, parent(t))
+			}
+		}
+	}
 
 	// Construct commands for each package
 	var cmds []*exec.Cmd
