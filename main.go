@@ -27,7 +27,7 @@ func parent(s string) string {
 
 func usage() {
 	_, _ = fmt.Fprintln(os.Stderr, "Usage: go test -json ./... | gotest-rerun-failed [args...]")
-	_, _ = fmt.Fprintln(os.Stderr, "\nReads JSON output from 'go test -json' on stdin, identifies failed tests, and reruns them.")
+	_, _ = fmt.Fprintln(os.Stderr, "\nReads JSON output from 'go test -json' on stdin, identifies failed tests and packages, and reruns them.")
 	_, _ = fmt.Fprintln(os.Stderr, "Additional arguments are passed to 'go test' when rerunning failed tests.")
 }
 
@@ -58,14 +58,16 @@ func main() {
 			continue
 		}
 
-		if e.Action != "fail" || e.Test == "" {
+		if e.Action != "fail" {
 			continue
 		}
 
 		if failed[e.Package] == nil {
 			failed[e.Package] = map[string]bool{}
 		}
-		failed[e.Package][e.Test] = true
+		if e.Test != "" {
+			failed[e.Package][e.Test] = true
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -100,25 +102,26 @@ func main() {
 	var cmds []*exec.Cmd
 	for _, pkg := range pkgs {
 		testsMap := failed[pkg]
-		if len(testsMap) == 0 {
-			continue
+		cmdArgs := []string{"test", pkg}
+
+		// Without named failed tests, retry the whole package.
+		if len(testsMap) > 0 {
+			// Build the -run regex with sorted entries for deterministic output
+			tests := make([]string, 0, len(testsMap))
+			for t := range testsMap {
+				tests = append(tests, t)
+			}
+			sort.Strings(tests)
+
+			escaped := make([]string, 0, len(tests))
+			for _, t := range tests {
+				escaped = append(escaped, "^"+regexp.QuoteMeta(t)+"$")
+			}
+			runArg := strings.Join(escaped, "|")
+			cmdArgs = append(cmdArgs, "-run", runArg)
 		}
 
-		// Build the -run regex with sorted entries for deterministic output
-		tests := make([]string, 0, len(testsMap))
-		for t := range testsMap {
-			tests = append(tests, t)
-		}
-		sort.Strings(tests)
-
-		escaped := make([]string, 0, len(tests))
-		for _, t := range tests {
-			escaped = append(escaped, "^"+regexp.QuoteMeta(t)+"$")
-		}
-		runArg := strings.Join(escaped, "|")
-
-		// Construct command args: go test <package> -run <regex> [other args...]
-		cmdArgs := append([]string{"test", pkg, "-run", runArg}, os.Args[1:]...)
+		cmdArgs = append(cmdArgs, os.Args[1:]...)
 		cmd := exec.Command("go", cmdArgs...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

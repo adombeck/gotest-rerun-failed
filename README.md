@@ -18,6 +18,10 @@ go test -json ./... | gotest-rerun-failed
 
 Additional arguments are passed to `go test` when rerunning failed tests.
 
+If a package fails without reporting any individual failed tests, such as
+after a timeout or panic, the whole package is rerun. Other packages still
+rerun only their failed tests.
+
 ## Advanced Usage
 
 Combine with [gotestfmt](https://github.com/ubuntu/gotestfmt) to print formatted
